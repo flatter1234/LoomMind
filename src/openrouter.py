@@ -9,7 +9,6 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "deepseek/deepseek-chat"
 # OPENROUTER_MODEL = "deepseek/deepseek-chat-v3.1"
 # OPENROUTER_MODEL = "qwen/qwen3-30b-a3b"
-# OPENROUTER_MODEL = "moonshotai/kimi-k2-0905-preview"
 
 
 def openrouter_chat() -> ChatOpenAI:
