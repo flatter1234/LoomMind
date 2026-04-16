@@ -1,0 +1,23 @@
+.cursor/
+
+# API keys and local env
+.env
+.env.*
+!.env.example
+
+# uv / Python
+loom/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
