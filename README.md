@@ -13,3 +13,5 @@ AI Agent Demo. Use in lark.
 ## Introduction
 
 API key should be written in `.env` file.
+
+The bot should act in lark as user profile.

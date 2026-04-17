@@ -9,6 +9,8 @@ dependencies = [
     "langchain-openai>=0.3.0",
     "langchain-core>=0.3.0",
     "python-dotenv>=1.0.0",
+    "lark-oapi>=1.5.3",
+    "python-socks[asyncio]>=2.4.0",
 ]
 
 [dependency-groups]
@@ -37,4 +39,4 @@ select = [
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["openrouter"]
+known-first-party = ["api", "graph_agent", "feishu_app", "parser"]

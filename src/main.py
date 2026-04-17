@@ -1,51 +1,22 @@
-"""最小 LangGraph Agent：单节点调用聊天模型。"""
-
-from typing import Annotated, TypedDict
+"""LoomMind 入口：默认连接飞书长连接；--demo 为本地问答。"""
 
 from dotenv import load_dotenv
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
 
-from openrouter import openrouter_chat
-
-load_dotenv()
+from parser import parse_args
 
 
-class AgentState(TypedDict):
-    messages: Annotated[list, add_messages]
+def main() -> None:
+    load_dotenv()
+    args = parse_args()
+    if args.demo:
+        from graph_agent import run_local_demo
 
+        run_local_demo()
+        return
 
-def build_graph():
-    model = openrouter_chat()
+    from feishu_app import run_feishu_long_connection
 
-    def agent(state: AgentState) -> dict:
-        """根据当前状态中的消息列表调用模型，追加一条 AI 回复。"""
-        reply: AIMessage = model.invoke(state["messages"])
-        return {"messages": [reply]}
-
-    g = StateGraph(AgentState)
-    g.add_node("agent", agent)
-    g.add_edge(START, "agent")
-    g.add_edge("agent", END)
-    return g.compile()
-
-
-def main():
-    app = build_graph()
-    result = app.invoke(
-        {
-            "messages": [
-                SystemMessage(content="你是简洁助手，用中文回答。"),
-                HumanMessage(content="用一句话说明 LangGraph 适合做什么。"),
-            ]
-        }
-    )
-    last = result["messages"][-1]
-    if isinstance(last, AIMessage):
-        print(last.content)
-    else:
-        print(last)
+    run_feishu_long_connection()
 
 
 if __name__ == "__main__":

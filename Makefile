@@ -11,4 +11,5 @@ lint:
 	uv run --group dev ruff check src
 
 clean:
-	rm -rf .ruff_cache src/__pycache__
+	rm -rf .ruff_cache
+	find . -type d -name '__pycache__' -exec rm -rf {} +
