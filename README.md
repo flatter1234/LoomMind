@@ -1,4 +1,4 @@
-# LoomMind
+    # LoomMind
 
 AI Agent Demo. Use in lark.
 
@@ -15,3 +15,8 @@ AI Agent Demo. Use in lark.
 API key should be written in `.env` file.
 
 The bot should act in lark as user profile.
+
+The environment variable `$LOOMMIND_TOOLS` tells where to search for tools.
+
+- `$LOOMMIND_TOOLS/tools` gives all the possible tools.
+- `$LOOMMIND_TOOLS/scripts` gives all the possible scripts to run with.
