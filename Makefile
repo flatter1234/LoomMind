@@ -11,7 +11,7 @@ lint:
 	uv run --group dev ruff check src scripts
 
 log:
-	PYTHONPATH=src uv run python scripts/export_log_txt.py
+	uv run python scripts/export_log_txt.py
 
 clean:
 	rm -rf .ruff_cache

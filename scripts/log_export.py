@@ -1,4 +1,4 @@
-"""将 log/raw 会话 JSON 同步为 log/content 下 user:/ai: 纯文本。"""
+"""raw JSON 转 content 下 user:/ai: 文本；供 export_log_txt 与批处理调用。"""
 
 import json
 from pathlib import Path
@@ -6,7 +6,7 @@ from typing import Any
 
 
 def _default_log_root() -> Path:
-    return Path(__file__).resolve().parents[2] / "log"
+    return Path(__file__).resolve().parents[1] / "log"
 
 
 def lines_from_stored_messages(messages: list[dict[str, Any]]) -> list[str]:

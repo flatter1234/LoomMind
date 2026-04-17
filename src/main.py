@@ -2,6 +2,8 @@
 
 from dotenv import load_dotenv
 
+from context import run_local_demo
+from lark import run_feishu_long_connection
 from parser import parse_args
 
 
@@ -9,12 +11,8 @@ def main() -> None:
     load_dotenv()
     args = parse_args()
     if args.lark:
-        from feishu_app import run_feishu_long_connection
-
         run_feishu_long_connection()
         return
-
-    from graph_agent import run_local_demo
 
     run_local_demo()
 
