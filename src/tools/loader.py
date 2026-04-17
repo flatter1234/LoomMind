@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import sys
-from typing import Callable
+from collections.abc import Callable
 
 from langchain_core.tools import StructuredTool
 from mcp.types import TextContent

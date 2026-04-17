@@ -15,7 +15,7 @@ def planning_memory_path() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     path = d / _PLANNING_MEMORY_FILE
     if not path.exists():
-        path.write_text("# Planning 长期记忆\n\n", encoding="utf-8")
+        path.write_text("# 长期规划记忆\n\n", encoding="utf-8")
     return path
 
 
