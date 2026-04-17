@@ -9,6 +9,7 @@ from langchain_core.messages import (
 )
 
 from context import ContentManager
+from context.token_budget import TOKEN_CONTEXT_LIMIT, count_messages_tokens
 from graph_agent import build_graph
 
 from .response_check import ResponseAction, detect_reply_command
@@ -47,6 +48,16 @@ def run_cli() -> None:
                 manager.persist(messages)
                 continue
 
+            prospective = count_messages_tokens(
+                [*messages, HumanMessage(content=user_text)]
+            )
+            if prospective > TOKEN_CONTEXT_LIMIT:
+                print(
+                    f"本轮输入后约 {prospective:,} token，"
+                    f"已超过上限 {TOKEN_CONTEXT_LIMIT:,}，"
+                    "请缩短对话或新开会话后再试。"
+                )
+                continue
             messages.append(HumanMessage(content=user_text))
             try:
                 print("助手: ", end="", flush=True)
@@ -82,6 +93,11 @@ def run_cli() -> None:
 
             assistant_action = detect_reply_command(assistant_text)
             manager.persist(messages)
+            used = count_messages_tokens(messages)
+            print(
+                f"[token] 已用 {used:,} / 上限 {TOKEN_CONTEXT_LIMIT:,}",
+                flush=True,
+            )
             if assistant_action is ResponseAction.EXIT:
                 break
             if assistant_action is ResponseAction.LOG:
