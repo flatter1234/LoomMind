@@ -1,12 +1,14 @@
-"""LangGraph Agent：单节点调用聊天模型。"""
+"""LangGraph Agent：支持工具调用的多节点图。"""
 
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 
 from api import create_chat_model
+from tools.loader import load_tools
 
 
 class AgentState(TypedDict):
@@ -14,15 +16,31 @@ class AgentState(TypedDict):
 
 
 def build_graph():
+    tools = load_tools()
+    print(f"Loaded {len(tools)} tools.")
     model = create_chat_model()
+    if tools:
+        model = model.bind_tools(tools)
 
     def agent(state: AgentState) -> dict:
-        """根据当前状态中的消息列表调用模型，追加一条 AI 回复。"""
         reply: AIMessage = model.invoke(state["messages"])
         return {"messages": [reply]}
+
+    def should_continue(state: AgentState) -> str:
+        last = state["messages"][-1]
+        if isinstance(last, AIMessage) and last.tool_calls:
+            return "tools"
+        return END
 
     g = StateGraph(AgentState)
     g.add_node("agent", agent)
     g.add_edge(START, "agent")
-    g.add_edge("agent", END)
+
+    if tools:
+        g.add_node("tools", ToolNode(tools))
+        g.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+        g.add_edge("tools", "agent")
+    else:
+        g.add_edge("agent", END)
+
     return g.compile()
