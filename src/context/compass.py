@@ -8,6 +8,7 @@ import json
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from api import create_chat_model
+from api.runtime_settings import LLMRuntimeSettings
 
 _COMPASS_SUMMARY_SYSTEM = (
     "你是会话整理助手。将下列对话节选压缩为简洁中文摘要，保留：关键事实、用户目标、"
@@ -34,8 +35,10 @@ def _serialize_for_summary(msgs: list[BaseMessage]) -> str:
     return "\n".join(lines)
 
 
-def _summarize_slice(slice_msgs: list[BaseMessage]) -> str:
-    model = create_chat_model()
+def _summarize_slice(
+    slice_msgs: list[BaseMessage], *, llm: LLMRuntimeSettings | None = None
+) -> str:
+    model = create_chat_model(llm=llm)
     text = _serialize_for_summary(slice_msgs)
     reply = model.invoke(
         [
@@ -55,6 +58,7 @@ def compass_compress(
     messages: list[BaseMessage],
     *,
     keep_last: int = _DEFAULT_KEEP_LAST,
+    llm: LLMRuntimeSettings | None = None,
 ) -> tuple[list[BaseMessage], str, str | None]:
     """压缩 system 之后的早期轮次，保留最近 keep_last 条消息。
 
@@ -73,7 +77,7 @@ def compass_compress(
 
     old = rest[:-keep_last]
     recent = rest[-keep_last:]
-    summary = _summarize_slice(old)
+    summary = _summarize_slice(old, llm=llm)
     if not summary:
         return messages, "摘要为空，未修改历史。", None
 

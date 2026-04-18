@@ -4,6 +4,7 @@ from collections.abc import Iterable
 
 from langchain_core.tools import BaseTool
 
+from api.runtime_settings import LLMRuntimeSettings
 from planning import build_planning_graph, resolve_planning_max_cycles
 from skills import load_all_skills
 from tools.loader import load_tools
@@ -32,6 +33,7 @@ def build_graph(
     enabled_skills: Iterable[str] | None = None,
     enabled_mcps: Iterable[str] | None = None,
     max_cycles: int | None = None,
+    llm_settings: LLMRuntimeSettings | None = None,
 ):
     """构建 LangGraph。
 
@@ -48,4 +50,5 @@ def build_graph(
         model_name=model_name,
         tools=tools,
         max_cycles=resolve_planning_max_cycles(max_cycles),
+        llm_settings=llm_settings,
     )

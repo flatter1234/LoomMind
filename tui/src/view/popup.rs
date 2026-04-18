@@ -6,6 +6,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::theme::constants::POPUP_MAX_ROWS;
 use crate::theme::palette;
+use crate::util::truncate_to_width;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SlashCommand {
@@ -137,6 +138,29 @@ pub enum SelectorKind {
     Model,
     Skills,
     Mcp,
+    /// 选模型后：多项 .env 配置项列表
+    ModelConfig,
+}
+
+#[derive(Debug)]
+pub struct TextPrompt {
+    pub env_key: String,
+    pub title: String,
+    pub hint: String,
+    pub input: String,
+    pub cursor: usize,
+}
+
+impl TextPrompt {
+    pub fn new_env(env_key: String, title: String, hint: String) -> Self {
+        Self {
+            env_key,
+            title,
+            hint,
+            input: String::new(),
+            cursor: 0,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -217,6 +241,8 @@ pub struct Selector {
     pub kind: SelectorKind,
     pub title: String,
     pub items: Vec<String>,
+    /// 与 `items` 一一对应；为空时表示 id 即 `items[i]`（模型列表）
+    pub item_ids: Vec<String>,
     pub selected: std::collections::BTreeSet<String>,
     pub multi: bool,
     pub cursor: usize,
@@ -230,6 +256,7 @@ impl Selector {
             kind,
             title: title.into(),
             items: Vec::new(),
+            item_ids: Vec::new(),
             selected: std::collections::BTreeSet::new(),
             multi,
             cursor: 0,
@@ -240,6 +267,21 @@ impl Selector {
 
     pub fn populate(&mut self, items: Vec<String>, selected: Vec<String>) {
         self.items = items;
+        self.item_ids.clear();
+        self.selected = selected.into_iter().collect();
+        self.cursor = 0;
+        self.scroll = 0;
+        self.loading = false;
+    }
+
+    pub fn populate_with_ids(
+        &mut self,
+        labels: Vec<String>,
+        ids: Vec<String>,
+        selected: Vec<String>,
+    ) {
+        self.items = labels;
+        self.item_ids = ids;
         self.selected = selected.into_iter().collect();
         self.cursor = 0;
         self.scroll = 0;
@@ -684,4 +726,58 @@ fn render_trust_actions(
         Span::styled("]", base),
     ]);
     crate::view::history::render_buffer_line(frame, y, &line, area.width, area.x);
+}
+
+pub fn render_text_prompt(frame: &mut Frame, area: Rect, prompt: &TextPrompt) -> Option<(u16, u16)> {
+    if area.height < 2 || area.width < 4 {
+        return None;
+    }
+    let inner = render_block(frame, area, prompt.title.as_str());
+    let base = Style::default()
+        .bg(palette::USER_BAR_BG)
+        .fg(palette::USER_BAR_FG);
+    let muted = base.fg(palette::SURFACE_MUTED);
+    let mut y = inner.y;
+    if y < inner.y + inner.height {
+        write_line(
+            frame,
+            inner.x,
+            y,
+            inner.width,
+            &format!("  {}", prompt.hint),
+            muted.add_modifier(Modifier::ITALIC),
+        );
+        y += 1;
+    }
+    let input_y = y;
+    let prefix = "  › ";
+    let max_body = (inner.width as usize).saturating_sub(prefix.width());
+    let body = truncate_to_width(&prompt.input, max_body.max(1));
+    if y < inner.y + inner.height {
+        write_line(
+            frame,
+            inner.x,
+            y,
+            inner.width,
+            &(prefix.to_string() + &body),
+            base,
+        );
+        y += 1;
+    }
+    if y < inner.y + inner.height {
+        write_line(
+            frame,
+            inner.x,
+            y,
+            inner.width,
+            "  Enter 写入 .env · Esc 返回或取消",
+            muted,
+        );
+    }
+    let bc = prompt.cursor.min(prompt.input.len());
+    let before = &prompt.input[..bc];
+    let visible_before = truncate_to_width(before, max_body.max(1));
+    let col = inner.x as usize + prefix.width() + visible_before.width();
+    let max_col = (inner.x + inner.width).saturating_sub(1) as usize;
+    Some((col.min(max_col) as u16, input_y))
 }

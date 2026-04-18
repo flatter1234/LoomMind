@@ -1,7 +1,8 @@
 use std::time::Instant;
 
 use crate::theme::constants;
-use crate::view::popup::{Selector, SlashPopup, ToolApproval, TrustApproval};
+use crate::child::ModelConfigItem;
+use crate::view::popup::{Selector, SlashPopup, TextPrompt, ToolApproval, TrustApproval};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SessionState {
@@ -14,6 +15,7 @@ pub enum Overlay {
     #[default]
     None,
     Selector(Selector),
+    TextPrompt(TextPrompt),
     Approval(ToolApproval),
     Trust(TrustApproval),
 }
@@ -35,6 +37,9 @@ pub struct App {
     pub spinner_idx: usize,
     pub spinner_last: Instant,
     pub model_label: String,
+    pub llm_provider_label: String,
+    /// 选模型后「多项配置」列表备份，用于从输入框 Esc 返回列表
+    pub config_menu_backup: Option<Vec<ModelConfigItem>>,
     pub popup: SlashPopup,
     pub overlay: Overlay,
 }
@@ -52,6 +57,8 @@ impl App {
             spinner_idx: 0,
             spinner_last: Instant::now(),
             model_label,
+            llm_provider_label: "…".into(),
+            config_menu_backup: None,
             popup: SlashPopup::new(),
             overlay: Overlay::None,
         }

@@ -18,6 +18,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from api import create_chat_model
+from api.runtime_settings import LLMRuntimeSettings
 
 from .memory import append_long_term_memory, read_long_term_memories
 
@@ -194,10 +195,11 @@ def build_planning_graph(
     model_name: str | None = None,
     tools: Iterable[BaseTool] = (),
     max_cycles: int | None = None,
+    llm_settings: LLMRuntimeSettings | None = None,
 ):
     tool_list = list(tools)
     graph_max_cycles = resolve_planning_max_cycles(max_cycles)
-    base_model = create_chat_model(model_name)
+    base_model = create_chat_model(model_name, llm=llm_settings)
     thought_model = base_model.bind_tools(tool_list) if tool_list else base_model
 
     def thought(state: PlanningState) -> dict:

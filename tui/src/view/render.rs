@@ -9,7 +9,8 @@ use crate::theme::palette;
 use crate::util::{directory_line, truncate_left_to_width, truncate_to_width};
 use crate::view::history::render_buffer_line;
 use crate::view::popup::{
-    render_selector, render_slash_popup, render_tool_approval, render_trust_approval, SlashPopup,
+    render_selector, render_slash_popup, render_text_prompt, render_tool_approval,
+    render_trust_approval, SlashPopup,
 };
 
 pub fn draw_inline(frame: &mut Frame, app: &App) {
@@ -23,10 +24,16 @@ pub fn draw_inline(frame: &mut Frame, app: &App) {
         ])
         .split(area);
 
-    render_composer(frame, chunks[0], app);
+    let hide_composer_cursor = app.overlay.is_active();
+    render_composer(frame, chunks[0], app, hide_composer_cursor);
 
     match &app.overlay {
         Overlay::Selector(sel) => render_selector(frame, chunks[1], sel),
+        Overlay::TextPrompt(p) => {
+            if let Some((cx, cy)) = render_text_prompt(frame, chunks[1], p) {
+                frame.set_cursor_position((cx, cy));
+            }
+        }
         Overlay::Approval(req) => render_tool_approval(frame, chunks[1], req),
         Overlay::Trust(req) => render_trust_approval(frame, chunks[1], req),
         Overlay::None if SlashPopup::is_active(&app.input) => {
@@ -104,7 +111,7 @@ fn wrap_for_preview(text: &str, max_width: usize) -> Vec<String> {
     out
 }
 
-fn render_composer(frame: &mut Frame, zone: Rect, app: &App) {
+fn render_composer(frame: &mut Frame, zone: Rect, app: &App, hide_cursor: bool) {
     let width = zone.width.max(2) as usize;
     let bg = Style::default()
         .bg(palette::USER_BAR_BG)
@@ -140,7 +147,9 @@ fn render_composer(frame: &mut Frame, zone: Rect, app: &App) {
     let cursor_col = zone.x as usize + prefix_cells + before.width();
     let max_col = zone.x as usize + width.saturating_sub(1);
     let cursor_col = cursor_col.min(max_col) as u16;
-    frame.set_cursor_position((cursor_col, content_y));
+    if !hide_cursor {
+        frame.set_cursor_position((cursor_col, content_y));
+    }
 }
 
 fn render_status_bar(frame: &mut Frame, zone: Rect, app: &App) {
@@ -157,6 +166,10 @@ fn render_status_bar(frame: &mut Frame, zone: Rect, app: &App) {
     left_spans.push(Span::styled(
         format!("{} ", app.model_label),
         Style::default().fg(palette::FG),
+    ));
+    left_spans.push(Span::styled(
+        format!("{} ", app.llm_provider_label),
+        Style::default().fg(palette::DIM),
     ));
     left_spans.push(Span::styled(
         format!("· {}", app.status),

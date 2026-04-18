@@ -15,10 +15,16 @@ AVAILABLE_MODELS: list[str] = [
 DEFAULT_MODEL: str = AVAILABLE_MODELS[0]
 
 
-def create_openrouter_chat_model(model: str | None = None) -> ChatOpenAI:
+def create_openrouter_chat_model(
+    model: str | None = None, *, api_key: str | None = None
+) -> ChatOpenAI:
+    if api_key is not None and api_key.strip():
+        key = api_key.strip()
+    else:
+        key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     return ChatOpenAI(
         model=(model or DEFAULT_MODEL).strip(),
-        openai_api_key=os.environ.get("OPENROUTER_API_KEY", "").strip(),
+        openai_api_key=key,
         openai_api_base=OPENROUTER_BASE_URL,
         temperature=0,
     )

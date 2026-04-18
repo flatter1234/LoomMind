@@ -1,6 +1,7 @@
 """本地终端多轮对话入口"""
 
 import json
+import os
 import subprocess
 import sys
 import traceback
@@ -17,6 +18,9 @@ from langchain_core.messages import (
 
 import trust
 from api import default_model_name, list_available_models
+from api.ollama import normalized_openai_api_base
+from api.provider import LLMProvider
+from api.runtime_settings import LLMRuntimeSettings
 from context import ContentManager
 from context.compass import compass_compress
 from context.token_budget import TOKEN_CONTEXT_LIMIT, count_messages_tokens
@@ -25,6 +29,8 @@ from memory import build_system_prompt_with_memory, record_compass_digest
 from planning import resolve_planning_max_cycles
 from tools.loader import set_confirmation_callback, set_notification_callback
 
+from .env_file import remove_dotenv_key, upsert_dotenv
+from .post_model_config import collect_post_model_config_items, dotenv_path_for_session
 from .response_check import ResponseAction, detect_reply_command
 from .stdio_confirm import stdio_tool_confirm, stdio_tool_notify
 from .stdio_protocol import emit, read_command_line
@@ -170,8 +176,9 @@ class _Session:
     """
 
     def __init__(self) -> None:
-        self.model_name: str = default_model_name()
-        self.available_models: list[str] = list_available_models()
+        self.llm = LLMRuntimeSettings()
+        self.model_name: str = default_model_name(llm=self.llm)
+        self.available_models: list[str] = list_available_models(llm=self.llm)
         self.available_skills: list[str] = list_available_skills()
         self.available_mcps: list[str] = list_available_mcps()
         # 默认启用全部
@@ -186,7 +193,52 @@ class _Session:
             enabled_skills=sorted(self.enabled_skills),
             enabled_mcps=sorted(self.enabled_mcps),
             max_cycles=self.max_plan_cycles,
+            llm_settings=self.llm,
         )
+
+    def clear_llm_override_for_env_key(self, key: str) -> None:
+        if key == "OPENROUTER_API_KEY":
+            self.llm.openrouter_api_key = None
+        elif key == "OLLAMA_BASE_URL":
+            self.llm.ollama_base_url = None
+        elif key == "OLLAMA_API_KEY":
+            self.llm.ollama_api_key = None
+
+    def apply_llm_config(self, raw: dict) -> None:
+        if raw.get("clear") is True:
+            self.llm = LLMRuntimeSettings()
+        else:
+            if "provider" in raw:
+                v = raw["provider"]
+                if v is None or (isinstance(v, str) and not str(v).strip()):
+                    self.llm.provider = None
+                else:
+                    p = str(v).strip().lower()
+                    if p == LLMProvider.OLLAMA:
+                        self.llm.provider = LLMProvider.OLLAMA
+                    elif p == LLMProvider.OPENROUTER:
+                        self.llm.provider = LLMProvider.OPENROUTER
+                    else:
+                        raise ValueError(
+                            f"未知 provider：{v!r}，请使用 openrouter 或 ollama"
+                        )
+            for json_key, attr in (
+                ("openrouter_api_key", "openrouter_api_key"),
+                ("ollama_api_key", "ollama_api_key"),
+                ("ollama_base_url", "ollama_base_url"),
+            ):
+                if json_key not in raw:
+                    continue
+                val = raw[json_key]
+                if val is None:
+                    setattr(self.llm, attr, None)
+                else:
+                    st = str(val).strip()
+                    setattr(self.llm, attr, st or None)
+        self.available_models = list_available_models(llm=self.llm)
+        if self.model_name not in self.available_models:
+            self.model_name = default_model_name(llm=self.llm)
+        self.graph = self._build()
 
     def set_model(self, name: str) -> str:
         if name not in self.available_models:
@@ -255,6 +307,41 @@ def _emit_mcps(session: _Session) -> None:
     )
 
 
+_PERSISTABLE_ENV_KEYS = frozenset(
+    {"OPENROUTER_API_KEY", "OLLAMA_BASE_URL", "OLLAMA_API_KEY"}
+)
+
+
+def _emit_llm_config(session: _Session) -> None:
+    s = session.llm
+    p = s.effective_provider()
+    ork = (
+        s.openrouter_api_key.strip()
+        if s.openrouter_api_key and str(s.openrouter_api_key).strip()
+        else os.environ.get("OPENROUTER_API_KEY", "").strip()
+    )
+    base = normalized_openai_api_base(base_url_override=s.ollama_base_url)
+    emit(
+        {
+            "type": "llm_config",
+            "provider": p.value,
+            "openrouter_key_set": bool(ork),
+            "openrouter_from_session": bool(
+                s.openrouter_api_key and str(s.openrouter_api_key).strip()
+            ),
+            "ollama_base": base,
+            "ollama_base_from_session": bool(
+                s.ollama_base_url and str(s.ollama_base_url).strip()
+            ),
+            "ollama_key_from_session": bool(
+                s.ollama_api_key and str(s.ollama_api_key).strip()
+            ),
+            "provider_from_session": s.provider is not None,
+            "model": session.model_name,
+        }
+    )
+
+
 def run_cli_stdio() -> None:
     """与 `run_cli` 相同业务逻辑，经 stdin/stdout NDJSON 与 TUI 通信。"""
     set_confirmation_callback(stdio_tool_confirm)
@@ -273,6 +360,7 @@ def run_cli_stdio() -> None:
             "type": "ready",
             "message": "已就绪",
             "model": session.model_name,
+            "llm_provider": session.llm.effective_provider().value,
             "max_plan_cycles": resolve_planning_max_cycles(session.max_plan_cycles),
         }
     )
@@ -305,7 +393,11 @@ def run_cli_stdio() -> None:
                 except ValueError as e:
                     emit({"type": "error", "message": str(e)})
                 else:
-                    emit({"type": "model_set", "name": name})
+                    items = collect_post_model_config_items(session)
+                    payload: dict = {"type": "model_set", "name": name}
+                    if items:
+                        payload["post_config"] = {"items": items}
+                    emit(payload)
                 continue
 
             if cmd_type == "list_skills":
@@ -347,6 +439,63 @@ def run_cli_stdio() -> None:
                     emit({"type": "plan_cycles_set", "max_plan_cycles": n})
                 continue
 
+            if cmd_type == "set_env_persist":
+                if not isinstance(raw, dict):
+                    emit({"type": "error", "message": "set_env_persist 须为 JSON 对象"})
+                    continue
+                key = str(raw.get("key", "")).strip()
+                if key not in _PERSISTABLE_ENV_KEYS:
+                    emit(
+                        {
+                            "type": "error",
+                            "message": f"不允许写入的环境变量：{key!r}",
+                        }
+                    )
+                    continue
+                val_raw = raw.get("value")
+                val_s = "" if val_raw is None else str(val_raw)
+                path = dotenv_path_for_session()
+                try:
+                    if not val_s.strip():
+                        remove_dotenv_key(path, key)
+                        os.environ.pop(key, None)
+                    else:
+                        upsert_dotenv(path, key, val_s.strip())
+                        os.environ[key] = val_s.strip()
+                    session.clear_llm_override_for_env_key(key)
+                    session.available_models = list_available_models(llm=session.llm)
+                    if session.model_name not in session.available_models:
+                        session.model_name = default_model_name(llm=session.llm)
+                    session.graph = session._build()
+                except OSError as e:
+                    emit({"type": "error", "message": f"写入 .env 失败: {e}"})
+                else:
+                    remaining = collect_post_model_config_items(session)
+                    emit(
+                        {
+                            "type": "env_persisted",
+                            "key": key,
+                            "post_config": {"items": remaining},
+                        }
+                    )
+                continue
+
+            if cmd_type == "get_llm_config":
+                _emit_llm_config(session)
+                continue
+            if cmd_type == "set_llm_config":
+                if not isinstance(raw, dict):
+                    emit({"type": "error", "message": "set_llm_config 须为 JSON 对象"})
+                    continue
+                try:
+                    session.apply_llm_config(raw)
+                except ValueError as e:
+                    emit({"type": "error", "message": str(e)})
+                else:
+                    emit({"type": "llm_config_set", "message": "已应用 LLM 配置"})
+                    _emit_llm_config(session)
+                continue
+
             if cmd_type != "user_message":
                 emit({"type": "error", "message": f"未知指令类型: {cmd_type!r}"})
                 continue
@@ -360,7 +509,7 @@ def run_cli_stdio() -> None:
                 emit({"type": "session_end", "reason": "user_exit"})
                 break
             if user_action is ResponseAction.COMPASS:
-                messages, status, digest = compass_compress(messages)
+                messages, status, digest = compass_compress(messages, llm=session.llm)
                 emit({"type": "system", "message": status})
                 if digest:
                     record_compass_digest(digest)

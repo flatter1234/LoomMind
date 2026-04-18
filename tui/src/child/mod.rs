@@ -4,11 +4,48 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
+use serde_json::Value;
+
+#[derive(Debug, Clone)]
+pub struct ModelConfigItem {
+    pub id: String,
+    pub label: String,
+    pub hint: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelPostConfig {
+    pub items: Vec<ModelConfigItem>,
+}
+
+fn parse_post_config(value: &Value) -> Option<ModelPostConfig> {
+    let obj = value.as_object()?;
+    let arr = obj.get("items")?.as_array()?;
+    let mut items = Vec::new();
+    for it in arr {
+        let o = it.as_object()?;
+        let id = o.get("id")?.as_str()?.to_string();
+        let label = o
+            .get("label")
+            .and_then(|v| v.as_str())
+            .unwrap_or(id.as_str())
+            .to_string();
+        let hint = o
+            .get("hint")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        items.push(ModelConfigItem { id, label, hint });
+    }
+    Some(ModelPostConfig { items })
+}
+
 #[derive(Debug, Clone)]
 pub enum ChildEvent {
     Ready {
         message: String,
         model: Option<String>,
+        llm_provider: Option<String>,
     },
     System(String),
     AssistantDelta(String),
@@ -33,7 +70,25 @@ pub enum ChildEvent {
         items: Vec<String>,
         selected: Vec<String>,
     },
-    ModelSet(String),
+    ModelSet {
+        name: String,
+        post_config: Option<ModelPostConfig>,
+    },
+    EnvPersisted {
+        key: String,
+        post_config: Option<ModelPostConfig>,
+    },
+    LlmConfig {
+        provider: String,
+        model: String,
+        ollama_base: String,
+        openrouter_key_set: bool,
+        openrouter_from_session: bool,
+        ollama_base_from_session: bool,
+        ollama_key_from_session: bool,
+        provider_from_session: bool,
+    },
+    LlmConfigSet(String),
     SkillsSet(Vec<String>),
     McpsSet(Vec<String>),
     ToolConfirmRequest {
@@ -166,9 +221,14 @@ fn parse_event(line: &str) -> Result<ChildEvent, String> {
                 .get("model")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let llm_provider = value
+                .get("llm_provider")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             ChildEvent::Ready {
                 message: s("message"),
                 model,
+                llm_provider,
             }
         }
         "system" => ChildEvent::System(s("message")),
@@ -199,7 +259,23 @@ fn parse_event(line: &str) -> Result<ChildEvent, String> {
             items: str_array("items"),
             selected: str_array("selected"),
         },
-        "model_set" => ChildEvent::ModelSet(s("name")),
+        "model_set" => {
+            let name = s("name");
+            let post_config = value
+                .get("post_config")
+                .and_then(parse_post_config);
+            ChildEvent::ModelSet {
+                name,
+                post_config,
+            }
+        },
+        "env_persisted" => {
+            let key = s("key");
+            let post_config = value
+                .get("post_config")
+                .and_then(parse_post_config);
+            ChildEvent::EnvPersisted { key, post_config }
+        },
         "skills_set" => ChildEvent::SkillsSet(str_array("selected")),
         "mcps_set" => ChildEvent::McpsSet(str_array("selected")),
         "tool_confirm_request" => {
@@ -232,6 +308,32 @@ fn parse_event(line: &str) -> Result<ChildEvent, String> {
         "trust_request" => ChildEvent::TrustRequest {
             workspace: s("workspace"),
         },
+        "llm_config" => ChildEvent::LlmConfig {
+            provider: s("provider"),
+            model: s("model"),
+            ollama_base: s("ollama_base"),
+            openrouter_key_set: value
+                .get("openrouter_key_set")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            openrouter_from_session: value
+                .get("openrouter_from_session")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            ollama_base_from_session: value
+                .get("ollama_base_from_session")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            ollama_key_from_session: value
+                .get("ollama_key_from_session")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            provider_from_session: value
+                .get("provider_from_session")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+        },
+        "llm_config_set" => ChildEvent::LlmConfigSet(s("message")),
         other => ChildEvent::System(format!("未知事件 {other}: {line}")),
     })
 }
